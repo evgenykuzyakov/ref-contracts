@@ -79,7 +79,7 @@ impl SimplePool {
     }
 
     /// Adds the amounts of tokens to liquidity pool and returns number of shares that this user receives.
-    pub fn add_liquidity(&mut self, sender_id: &AccountId, amounts: Vec<Balance>) -> Balance {
+    pub fn add_liquidity(&mut self, sender_id: &AccountId, amounts: &mut Vec<Balance>) -> Balance {
         assert_eq!(
             amounts.len(),
             self.token_account_ids.len(),
@@ -97,12 +97,14 @@ impl SimplePool {
             for i in 0..self.token_account_ids.len() {
                 let amount = U256::from(self.amounts[i]) * fair_supply
                     / U256::from(self.shares_total_supply);
+                amounts[i] -= amount.as_u128();
                 self.amounts[i] += amount.as_u128();
             }
             fair_supply.as_u128()
         } else {
             for i in 0..self.token_account_ids.len() {
                 self.amounts[i] += amounts[i];
+                amounts[i] = 0;
             }
             INIT_SHARES_SUPPLY
         };
@@ -215,6 +217,7 @@ impl SimplePool {
         let in_idx = self.token_index(token_in);
         let out_idx = self.token_index(token_out);
         let amount_out = self.internal_get_return(in_idx, amount_in, out_idx);
+        // TODO: Move log after.
         env::log(
             format!(
                 "Swapped {} {} for {} {}",
@@ -252,6 +255,7 @@ impl SimplePool {
 
         // Update volumes.
         self.volumes[in_idx].input.0 += amount_in;
+        // TODO: should it be `out_idx`
         self.volumes[in_idx].output.0 += amount_out;
 
         amount_out

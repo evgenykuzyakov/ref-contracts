@@ -68,7 +68,7 @@ impl Contract {
     pub fn new(owner_id: ValidAccountId, exchange_fee: u32, referral_fee: u32) -> Self {
         assert!(!env::state_exists(), "ERR_CONTRACT_IS_INITIALIZED");
         Self {
-            owner_id: owner_id.as_ref().clone(),
+            owner_id: owner_id.into(),
             exchange_fee,
             referral_fee,
             pools: Vector::new(b"p".to_vec()),
@@ -98,7 +98,7 @@ impl Contract {
         assert_one_yocto();
         let sender_id = env::predecessor_account_id();
         let mut prev_amount = None;
-        let referral_id = referral_id.map(|r| r.as_ref().clone());
+        let referral_id = referral_id.map(|r| r.into());
         for action in actions {
             let amount_in = action
                 .amount_in
@@ -110,6 +110,7 @@ impl Contract {
                 amount_in,
                 action.token_out,
                 action.min_amount_out,
+                // TODO: Don't clone referral_id here.
                 referral_id.clone(),
             ));
         }
@@ -118,17 +119,21 @@ impl Contract {
 
     /// Add liquidity from already deposited amounts to given pool.
     #[payable]
-    pub fn add_liquidity(&mut self, pool_id: u64, amounts: Vec<U128>) {
+    pub fn add_liquidity(&mut self, pool_id: u64, amounts: Vec<U128>, min_shares: U128) {
         assert_one_yocto();
         let sender_id = env::predecessor_account_id();
-        let amounts: Vec<u128> = amounts.into_iter().map(|amount| amount.into()).collect();
+        let mut amounts: Vec<u128> = amounts.into_iter().map(|amount| amount.into()).collect();
         let mut pool = self.pools.get(pool_id).expect("ERR_NO_POOL");
         let mut deposits = self.deposited_amounts.get(&sender_id).unwrap_or_default();
         let tokens = pool.tokens();
         for i in 0..tokens.len() {
             deposits.sub(tokens[i].clone(), amounts[i]);
         }
-        pool.add_liquidity(&sender_id, amounts);
+        let shares = pool.add_liquidity(&sender_id, &mut amounts);
+        assert!(min_shares <= shares, "ERR_MIN_SHARES");
+        for i in 0..tokens.len() {
+            deposits.add(tokens[i].clone(), amounts[i]);
+        }
         self.deposited_amounts.insert(&sender_id, &deposits);
         self.pools.replace(pool_id, &pool);
     }
